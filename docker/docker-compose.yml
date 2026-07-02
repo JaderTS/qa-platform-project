@@ -9,6 +9,7 @@ services:
       - API_BASE_URL=https://jsonplaceholder.typicode.com
       - PUSHGATEWAY_URL=http://pushgateway:9091
       - DD_API_KEY=${DD_API_KEY:-}
+      - DD_SITE=${DD_SITE:-datadoghq.com}
     volumes:
       - ../test-results:/app/test-results
       - ../playwright-report:/app/playwright-report
