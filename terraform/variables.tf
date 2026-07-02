@@ -64,6 +64,12 @@ variable "domain_name" {
   default     = ""
 }
 
+variable "datadog_site" {
+  description = "Datadog site your org lives on (check the URL when logged into the Datadog UI, e.g. datadoghq.com or us5.datadoghq.com)"
+  type        = string
+  default     = "datadoghq.com"
+}
+
 variable "enable_rds" {
   description = "Whether to provision the (optional, billable) RDS instance used to store historical test-run data"
   type        = bool

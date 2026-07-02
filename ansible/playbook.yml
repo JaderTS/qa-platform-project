@@ -69,11 +69,21 @@
         dest: "{{ qa_platform_dir }}/docker/.env"
         mode: "0600"
 
-    # The Datadog Agent container is intentionally not started here: on a
-    # t3.micro (1GB RAM) it competes with Prometheus/Grafana/Caddy for
-    # memory the box doesn't have to spare. scripts/export-metrics.js
-    # already pushes the same metrics straight to the Datadog API when
-    # DD_API_KEY is set, with no agent required.
+    # Always pull the pre-built image from GHCR (published by
+    # .github/workflows/playwright.yml) instead of building it here: a local
+    # `npm ci` + Docker build alongside Prometheus/Grafana/Caddy is what
+    # exhausted a t3.micro's CPU/RAM during earlier provisioning attempts.
+    - name: Pull the pre-built qa-tests image from GHCR
+      ansible.builtin.command: docker compose -f docker-compose.yml pull qa-tests
+      args:
+        chdir: "{{ qa_platform_dir }}/docker"
+      changed_when: true
+
+    # The Datadog Agent container is intentionally not started here: it
+    # competes with Prometheus/Grafana/Caddy for memory the runner doesn't
+    # have to spare. scripts/export-metrics.js already pushes the same
+    # metrics straight to the Datadog API when DD_API_KEY is set, with no
+    # agent required - see docker/docker-compose.yml.
     - name: Start the monitoring stack (with HTTPS via Caddy) and run the test suite once
       ansible.builtin.shell: |
         docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d prometheus grafana pushgateway caddy
@@ -81,8 +91,11 @@
       args:
         chdir: "{{ qa_platform_dir }}/docker"
 
-    - name: Schedule the QA suite to run hourly
+    - name: Schedule the QA suite to run hourly (pull first, then run)
       ansible.builtin.cron:
         name: "qa-platform test suite"
         minute: "0"
-        job: "cd {{ qa_platform_dir }}/docker && docker compose -f docker-compose.yml run --rm qa-tests >> /var/log/qa-platform-tests.log 2>&1"
+        job: >-
+          cd {{ qa_platform_dir }}/docker &&
+          docker compose -f docker-compose.yml pull qa-tests &&
+          docker compose -f docker-compose.yml run --rm qa-tests >> /var/log/qa-platform-tests.log 2>&1

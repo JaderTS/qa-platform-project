@@ -5,7 +5,9 @@
 A QA platform that runs an automated API test suite against public APIs
 (by default, [JSONPlaceholder](https://jsonplaceholder.typicode.com/)), with a
 full infrastructure stack to run that suite on a schedule in the cloud and
-observe the results (Prometheus, Grafana and, optionally, Datadog).
+observe the results in **both** Prometheus/Grafana (self-hosted) and
+**Datadog** (managed, with an active monitor/alert - not just metrics sitting
+there unused).
 
 ## Architecture
 
@@ -14,18 +16,30 @@ tests/api/*.spec.ts  --(Playwright)-->  JSONPlaceholder (public API)
         |
         v
 scripts/export-metrics.js --(push)--> Prometheus Pushgateway --> Prometheus --> Grafana
-                            \--(push, optional)--> Datadog
+                            \--(push)--> Datadog --> datadog_monitor (terraform/datadog.tf)
 ```
+
+Datadog is a first-class sink, not an optional extra: every test run pushes
+`qa.tests.*` metrics straight to the Datadog API (no local Agent needed - see
+[Exposed metrics](#exposed-metrics)), and a Terraform-managed monitor
+(`terraform/datadog.tf`) watches `qa.tests.failed` and goes red the moment a
+run has failures.
 
 The test suite can run in 3 places (pick one or combine them):
 
-1. **GitHub Actions** — on every push/PR and on a schedule every 6h (`.github/workflows/playwright.yml`).
-2. **Docker Compose** — locally or on a VM (via Ansible), together with Prometheus + Grafana + Pushgateway (`docker/docker-compose.yml`).
-3. **Kubernetes** — as an hourly `CronJob`, reporting metrics to a Pushgateway inside the cluster (`kubernetes/`).
+1. **GitHub Actions** — on every push/PR and on a schedule every 6h (`.github/workflows/playwright.yml`). On every merge to `main`, a second job builds the `qa-tests` image and publishes it to GHCR (`ghcr.io/<owner>/qa-platform-tests`), so nothing downstream ever has to build it.
+2. **Docker Compose** — locally or on a VM (via Ansible), together with Prometheus + Grafana + Pushgateway (`docker/docker-compose.yml`), pulling the pre-built GHCR image.
+3. **Kubernetes** — as an hourly `CronJob` pulling the same GHCR image, reporting metrics to a Pushgateway inside the cluster (`kubernetes/`).
 
 The AWS infrastructure (`terraform/`) only provisions the VPC/EC2 (and,
-optionally, an RDS instance) that host option 2; option 3 assumes you already
-have a Kubernetes cluster (local kind/minikube or EKS).
+optionally, an RDS instance) that host option 2, plus the Datadog monitor
+described above; option 3 assumes you already have a Kubernetes cluster
+(local kind/minikube or EKS).
+
+Because the image is always built in CI instead of on the runner, the EC2
+instance never has to run `npm ci`/`docker build` itself - it only ever
+`docker compose pull`s - which is what keeps a free-tier `t3.micro` (1GB RAM)
+viable long-term instead of getting overwhelmed on every deploy.
 
 ## Folder structure
 
@@ -68,26 +82,38 @@ API_BASE_URL=https://reqres.in/api npm test
 
 ```bash
 cd docker
-docker compose up --build
+docker compose pull   # fetch the pre-built qa-tests image from GHCR instead of building it
+docker compose up -d prometheus grafana pushgateway
+docker compose run --rm qa-tests
 ```
 
 This brings up:
-- `qa-tests`: builds the image from the root `Dockerfile`, runs `playwright test` and then `npm run metrics:export`, publishing metrics to the Pushgateway.
+- `qa-tests`: pulls `ghcr.io/jaderts/qa-platform-tests:latest` (built by CI - see below), runs `playwright test` and then `npm run metrics:export`, publishing metrics to the Pushgateway **and** to Datadog if `DD_API_KEY` is set.
 - `pushgateway`: http://localhost:9091
 - `prometheus`: http://localhost:9090 (already configured to scrape the Pushgateway)
 - `grafana`: http://localhost:3001 (login `admin` / `admin`, "QA Cloud Platform" dashboard pre-provisioned)
 
-To re-run the suite without rebuilding everything:
+Set `DD_API_KEY` (and `DD_SITE` if you're not on the default `datadoghq.com`
+site) before running `qa-tests` so metrics also reach Datadog:
 
 ```bash
+DD_API_KEY=xxxx DD_SITE=us5.datadoghq.com docker compose run --rm qa-tests
+```
+
+If you changed test/script code and want to try it before pushing (CI is
+what publishes the real image), build locally instead of pulling:
+
+```bash
+docker compose build qa-tests
 docker compose run --rm qa-tests
 ```
 
-To also send metrics to Datadog, export `DD_API_KEY` before bringing up the
-`qa-tests` container (the Datadog Agent is optional and sits behind a profile):
+The Datadog **Agent** container (host-level metrics/APM, heavier - not the
+same as the metric push above) stays behind an explicit profile since it
+doesn't fit alongside everything else on a `t3.micro`/`t3.small`:
 
 ```bash
-DD_API_KEY=xxxx docker compose --profile datadog up --build
+DD_API_KEY=xxxx docker compose --profile datadog up -d
 ```
 
 ## 3. Deploying to Kubernetes
@@ -103,12 +129,23 @@ kubectl create configmap grafana-dashboards \
 kubectl apply -f kubernetes/grafana.yaml
 ```
 
-Before applying the `CronJob`, publish the test image to a registry:
+`kubernetes/cronjob.yaml` already points at `ghcr.io/jaderts/qa-platform-tests:latest`
+(built and published by CI on every merge to main - see [CI/CD](#6-cicd-github-actions)),
+so there's nothing to build by hand. If your GHCR package is private, create
+a pull secret first; if you made it public (Package settings → Change
+visibility), skip straight to applying:
 
 ```bash
-docker build -t ghcr.io/<your-username>/qa-platform-tests:latest .
-docker push ghcr.io/<your-username>/qa-platform-tests:latest
-# edit kubernetes/cronjob.yaml, replacing the CHANGE_ME image
+# optional: for a private GHCR package
+kubectl create secret docker-registry ghcr-pull-secret \
+  --docker-server=ghcr.io --docker-username=<you> --docker-password=<a GHCR read:packages PAT> \
+  -n qa-platform
+# then add `imagePullSecrets: [{name: ghcr-pull-secret}]` under the pod spec in cronjob.yaml
+
+# optional: to also push metrics to Datadog from inside the cluster
+kubectl create secret generic datadog-credentials \
+  --from-literal=dd-api-key=xxxxxxxx -n qa-platform
+
 kubectl apply -f kubernetes/cronjob.yaml
 ```
 
@@ -116,18 +153,27 @@ Access Grafana with `kubectl port-forward svc/grafana 3000:3000 -n qa-platform`.
 
 ## 4. Provisioning the AWS infrastructure (Terraform)
 
-Provisions a VPC + EC2 instance (`t3.micro`, free-tier eligible) with a static
-Elastic IP, security group open on 22/80/443, and acts as the runner for
-Docker Compose. RDS is **optional and disabled by default**
-(`enable_rds = false`) to avoid unnecessary cost.
+Provisions a VPC + EC2 instance (`t3.micro`, free-tier eligible now that the
+image is pulled, not built - see above) with a static Elastic IP, security
+group open on 22/80/443, and acts as the runner for Docker Compose. RDS is
+**optional and disabled by default** (`enable_rds = false`) to avoid
+unnecessary cost. It also provisions a **Datadog monitor** (`terraform/datadog.tf`)
+that alerts when the test suite reports failures.
+
+The Datadog provider needs an API key *and* an Application key (Datadog UI →
+Organization Settings → API Keys / Application Keys) - both passed via
+environment variables, never committed:
 
 ```bash
 cd terraform
+export DD_API_KEY=xxxxxxxx
+export DD_APP_KEY=xxxxxxxx
 terraform init
 # edit terraform.tfvars:
 #   - key_name: an existing EC2 key pair
 #   - allowed_ssh_cidr: restrict SSH to your own IP, e.g. "203.0.113.10/32"
 #   - domain_name: the domain you'll point at this instance (e.g. jaderdomain.app)
+#   - datadog_site: the site your Datadog org lives on (check the URL when logged in)
 terraform plan
 terraform apply
 ```
@@ -171,45 +217,58 @@ ansible-playbook playbook.yml
 ```
 
 The playbook installs Docker + Compose, clones the repository, renders
-`docker/.env` (domain + Datadog key), brings up Prometheus/Grafana/Pushgateway
-behind **Caddy** (automatic Let's Encrypt HTTPS on your domain), runs the
-suite once, and schedules it (`cron`) to run every hour, logging to
+`docker/.env` (domain + Datadog key/site), **pulls** the pre-built `qa-tests`
+image from GHCR (never builds it - that's what makes `t3.micro` safe here),
+brings up Prometheus/Grafana/Pushgateway behind **Caddy** (automatic Let's
+Encrypt HTTPS on your domain), runs the suite once, and schedules it (`cron`)
+to run every hour (pulling the latest image each time), logging to
 `/var/log/qa-platform-tests.log`.
 
 Once it finishes, open `https://<your-domain>` — that's Grafana, running for
 real on your own AWS instance, with the "QA Cloud Platform" dashboard showing
-live pass/fail metrics from the scheduled runs. If `DD_API_KEY` was set,
-the same metrics also show up in your Datadog account (Metrics Explorer,
-search for `qa.tests.*`).
+live pass/fail metrics from the scheduled runs. The same metrics land in your
+Datadog account (Metrics Explorer, search for `qa.tests.*`), and the monitor
+from step 4 will fire there if a run ever has failures.
 
 ## 6. CI/CD (GitHub Actions)
 
-- `.github/workflows/playwright.yml`: runs the tests on push/PR and on a
-  schedule (`0 */6 * * *`), exports metrics if `PUSHGATEWAY_URL`/`DD_API_KEY`
-  are configured as repository secrets, and publishes the report as an
-  artifact.
+- `.github/workflows/playwright.yml`:
+  - **`test`** job: runs the tests on push/PR and on a schedule (`0 */6 * * *`),
+    exports metrics to Prometheus/Datadog if `PUSHGATEWAY_URL`/`DD_API_KEY`/`DD_SITE`
+    are configured as repository secrets, and publishes the report as an artifact.
+  - **`build-and-push`** job: runs only after `test` passes, only on `main`
+    (never on a PR), and publishes `ghcr.io/<owner>/qa-platform-tests:latest`
+    (and a `:<sha>` tag) using the built-in `GITHUB_TOKEN` - no extra secret
+    needed. The first time this runs, go to the package's settings on GitHub
+    (`https://github.com/users/<you>/packages/container/qa-platform-tests/settings`)
+    and set visibility to **Public** so the EC2 runner and Kubernetes can
+    `docker pull` it without credentials.
 - `.github/workflows/terraform.yml`: validates and runs `plan` for Terraform
   on PRs that touch `terraform/**`. `apply` only runs via manual
   `workflow_dispatch` (never automatically on a PR), using the
-  `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `DB_PASSWORD` secrets.
+  `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `DB_PASSWORD`, `DD_API_KEY`
+  and `DD_APP_KEY` secrets.
 
 ## Exposed metrics
 
 `scripts/export-metrics.js` reads `test-results/results.json` (Playwright's
-JSON reporter output) and publishes:
+JSON reporter output) and publishes the same numbers to two systems with
+different naming conventions:
 
-| Metric                        | Description                             |
-|-------------------------------|------------------------------------------|
-| `qa_tests_total`              | total tests in the run                  |
-| `qa_tests_passed`             | tests that passed                       |
-| `qa_tests_failed`             | tests that failed                       |
-| `qa_tests_flaky`              | flaky tests (passed on retry)           |
-| `qa_tests_skipped`            | skipped tests                           |
-| `qa_tests_duration_seconds`   | total run duration                      |
-| `qa_tests_success_ratio`      | (passed + flaky) / total                |
+| Meaning                    | Prometheus (underscored)     | Datadog (dotted)         |
+|-----------------------------|-------------------------------|---------------------------|
+| total tests in the run      | `qa_tests_total`               | `qa.tests.total`          |
+| tests that passed           | `qa_tests_passed`              | `qa.tests.passed`         |
+| tests that failed           | `qa_tests_failed`              | `qa.tests.failed`         |
+| flaky tests (passed on retry)| `qa_tests_flaky`               | `qa.tests.flaky`          |
+| skipped tests                | `qa_tests_skipped`             | `qa.tests.skipped`        |
+| total run duration            | `qa_tests_duration_seconds`   | `qa.tests.duration_seconds`|
+| (passed + flaky) / total     | `qa_tests_success_ratio`      | `qa.tests.success_ratio`  |
 
-The `monitoring/grafana/dashboards/qa-tests.json` dashboard already
-visualizes all of these series.
+The `monitoring/grafana/dashboards/qa-tests.json` dashboard visualizes the
+Prometheus series; the `datadog_monitor.qa_test_failures` resource in
+`terraform/datadog.tf` watches `qa.tests.failed` on the Datadog side and
+alerts (visible in Datadog → Monitors) the moment a run fails.
 
 ## Switching to reqres.in
 

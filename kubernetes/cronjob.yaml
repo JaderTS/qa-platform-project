@@ -1,8 +1,8 @@
 # Runs the Playwright API suite on a schedule and reports metrics to the
-# in-cluster Pushgateway (see pushgateway.yaml). Build and push the image
-# from the repo root Dockerfile first, e.g.:
-#   docker build -t ghcr.io/<you>/qa-platform-tests:latest .
-#   docker push ghcr.io/<you>/qa-platform-tests:latest
+# in-cluster Pushgateway (see pushgateway.yaml) and, if DD_API_KEY is set,
+# straight to Datadog too. The image is built and published automatically
+# by .github/workflows/playwright.yml on every merge to main - nothing to
+# build by hand here, `imagePullPolicy: Always` just picks up the latest tag.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -19,7 +19,8 @@ spec:
           restartPolicy: Never
           containers:
             - name: qa-tests
-              image: ghcr.io/CHANGE_ME/qa-platform-tests:latest
+              image: ghcr.io/jaderts/qa-platform-tests:latest
+              imagePullPolicy: Always
               command: ["sh", "-c", "npx playwright test; npm run metrics:export"]
               env:
                 - name: CI
@@ -28,6 +29,14 @@ spec:
                   value: https://jsonplaceholder.typicode.com
                 - name: PUSHGATEWAY_URL
                   value: http://pushgateway:9091
+                - name: DD_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: datadog-credentials
+                      key: dd-api-key
+                      optional: true
+                - name: DD_SITE
+                  value: us5.datadoghq.com
               resources:
                 requests:
                   cpu: 250m

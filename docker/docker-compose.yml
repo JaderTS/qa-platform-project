@@ -1,5 +1,11 @@
 services:
   qa-tests:
+    # `image:` lets `docker compose pull` fetch the version built and
+    # published by .github/workflows/playwright.yml on every merge to main,
+    # so the runner never has to build it locally (see ansible/playbook.yml).
+    # `build:` is only used when you explicitly run `docker compose build`
+    # for local development.
+    image: ghcr.io/jaderts/qa-platform-tests:latest
     build:
       context: ..
       dockerfile: Dockerfile
@@ -48,7 +54,11 @@ services:
     depends_on:
       - prometheus
 
-  # Optional: `docker compose --profile datadog up` if DD_API_KEY is set.
+  # Datadog itself is not optional - scripts/export-metrics.js always pushes
+  # metrics straight to the Datadog API when DD_API_KEY is set (see .env).
+  # This local Agent container is a separate, heavier add-on (host-level
+  # metrics/APM) for instances with RAM to spare: `docker compose --profile
+  # datadog up`. Skip it on a t3.micro/t3.small runner.
   datadog-agent:
     image: gcr.io/datadoghq/agent:latest
     profiles: ["datadog"]
