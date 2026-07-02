@@ -27,6 +27,16 @@ resource "aws_instance" "qa_runner" {
   tags = {
     Name = "${var.project_name}-qa-runner"
   }
+
+  lifecycle {
+    # data.aws_ami.ubuntu tracks "most_recent" on every plan, so without
+    # this a routine `terraform apply` for an unrelated change (e.g. an
+    # instance_type bump) can silently destroy and recreate this instance
+    # the moment Canonical publishes a newer AMI - wiping the disk (Docker,
+    # the cloned repo, everything Ansible provisioned) even though the EIP
+    # keeps the same public IP, masking the loss until something breaks.
+    ignore_changes = [ami]
+  }
 }
 
 # Static public IP so the DNS record you create at your registrar doesn't
