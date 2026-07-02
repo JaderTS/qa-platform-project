@@ -77,7 +77,7 @@ async function pushToDatadog(metrics) {
     'qa.tests.success_ratio': metrics.successRatio,
   }).map(([metric, value]) => ({
     metric,
-    type: 0,
+    type: 3, // gauge - see https://docs.datadoghq.com/api/latest/metrics/#submit-metrics
     points: [{ timestamp: now, value }],
     tags,
   }));
