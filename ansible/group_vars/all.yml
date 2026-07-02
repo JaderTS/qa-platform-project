@@ -1,0 +1,11 @@
+qa_platform_repo_url: "https://github.com/JaderTS/qa-platform-project.git"
+qa_platform_repo_version: main
+qa_platform_dir: /opt/qa-platform
+
+# Domain pointed at the runner's Elastic IP (terraform output
+# qa_runner_public_ip). Caddy uses it to request a Let's Encrypt cert.
+qa_platform_domain: jaderdomain.app
+
+# Never commit a real Datadog key. Pass it at run time instead:
+#   ansible-playbook playbook.yml -e dd_api_key=xxxxxxxx
+dd_api_key: "{{ lookup('env', 'DD_API_KEY') | default('', true) }}"

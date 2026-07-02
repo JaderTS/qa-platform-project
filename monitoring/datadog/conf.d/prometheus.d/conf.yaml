@@ -1,0 +1,14 @@
+# Datadog Agent OpenMetrics check: scrapes the same Pushgateway the QA
+# suite reports to, so the qa.tests.* series also show up in Datadog
+# without changing how the test run publishes metrics.
+instances:
+  - openmetrics_endpoint: http://pushgateway:9091/metrics
+    namespace: qa_platform
+    metrics:
+      - qa_tests_total
+      - qa_tests_passed
+      - qa_tests_failed
+      - qa_tests_flaky
+      - qa_tests_skipped
+      - qa_tests_duration_seconds
+      - qa_tests_success_ratio

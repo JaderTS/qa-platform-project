@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "test": "playwright test",
+    "test:report": "playwright show-report",
+    "metrics:export": "node scripts/export-metrics.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -11,8 +15,5 @@
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@types/node": "^26.1.0"
-  },
-  "dependencies": {
-    "axios": "^1.18.1"
   }
 }

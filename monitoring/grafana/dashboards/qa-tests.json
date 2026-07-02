@@ -1,0 +1,58 @@
+{
+  "title": "QA Cloud Platform - JSONPlaceholder Test Suite",
+  "uid": "qa-platform-tests",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Success ratio",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1 },
+        "overrides": []
+      },
+      "targets": [{ "expr": "qa_tests_success_ratio", "refId": "A" }]
+    },
+    {
+      "id": 2,
+      "title": "Tests passed",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 0 },
+      "targets": [{ "expr": "qa_tests_passed", "refId": "A" }]
+    },
+    {
+      "id": 3,
+      "title": "Tests failed",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } },
+        "overrides": []
+      },
+      "targets": [{ "expr": "qa_tests_failed", "refId": "A" }]
+    },
+    {
+      "id": 4,
+      "title": "Run duration (s)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+      "targets": [{ "expr": "qa_tests_duration_seconds", "refId": "A" }]
+    },
+    {
+      "id": 5,
+      "title": "Pass/fail trend",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "qa_tests_passed", "legendFormat": "passed", "refId": "A" },
+        { "expr": "qa_tests_failed", "legendFormat": "failed", "refId": "B" },
+        { "expr": "qa_tests_flaky", "legendFormat": "flaky", "refId": "C" }
+      ]
+    }
+  ]
+}

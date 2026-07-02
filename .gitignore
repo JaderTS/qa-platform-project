@@ -1,8 +1,21 @@
 
-# Playwright
 node_modules/
 /test-results/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.auto.tfvars
+terraform/crash.log
+
+ansible/inventory/hosts.ini
+ansible/*.retry
+
+docker/.env
+docker/caddy_data/
+
+.claude/
