@@ -69,9 +69,14 @@
         dest: "{{ qa_platform_dir }}/docker/.env"
         mode: "0600"
 
+    # The Datadog Agent container is intentionally not started here: on a
+    # t3.micro (1GB RAM) it competes with Prometheus/Grafana/Caddy for
+    # memory the box doesn't have to spare. scripts/export-metrics.js
+    # already pushes the same metrics straight to the Datadog API when
+    # DD_API_KEY is set, with no agent required.
     - name: Start the monitoring stack (with HTTPS via Caddy) and run the test suite once
       ansible.builtin.shell: |
-        docker compose -f docker-compose.yml -f docker-compose.prod.yml {{ (dd_api_key | length > 0) | ternary('--profile datadog', '') }} up -d prometheus grafana pushgateway caddy
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d prometheus grafana pushgateway caddy
         docker compose -f docker-compose.yml run --rm qa-tests
       args:
         chdir: "{{ qa_platform_dir }}/docker"
