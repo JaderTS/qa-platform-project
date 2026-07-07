@@ -100,3 +100,36 @@ variable "db_instance_class" {
   type        = string
   default     = "db.t3.micro"
 }
+
+variable "enable_assistant" {
+  description = "Whether to provision the QA assistant app on DigitalOcean App Platform"
+  type        = bool
+  default     = false
+}
+
+variable "assistant_github_repo" {
+  description = "GitHub repo (owner/name) App Platform deploys the assistant from - must already have the DigitalOcean GitHub App installed/authorized (App Platform UI prompts for this once)"
+  type        = string
+  default     = "JaderTS/qa-platform-project"
+}
+
+variable "groq_api_key" {
+  description = "Groq API key used by the QA assistant (console.groq.com). Set via TF_VAR_groq_api_key, never committed."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "dd_api_key" {
+  description = "Datadog API key, passed to the assistant app so it can query qa.tests.* metrics. Set via TF_VAR_dd_api_key, never committed."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "dd_app_key" {
+  description = "Datadog Application key, required (alongside the API key) to query metrics. Set via TF_VAR_dd_app_key, never committed."
+  type        = string
+  default     = ""
+  sensitive   = true
+}

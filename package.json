@@ -6,7 +6,9 @@
   "scripts": {
     "test": "playwright test",
     "test:report": "playwright show-report",
-    "metrics:export": "node scripts/export-metrics.js"
+    "metrics:export": "node scripts/export-metrics.js",
+    "ask": "node scripts/ask.js",
+    "assistant": "node assistant/server.js"
   },
   "keywords": [],
   "author": "",
@@ -15,5 +17,8 @@
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@types/node": "^26.1.0"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
   }
 }

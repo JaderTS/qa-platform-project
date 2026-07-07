@@ -46,10 +46,11 @@ em vez de travar a cada deploy.
 ```
 qa-cloud-platform/
 ├── tests/api/            # Testes Playwright (API) contra JSONPlaceholder
-├── scripts/              # Export de métricas dos resultados de teste
+├── scripts/              # Export de métricas + lógica central do assistente de IA
+├── assistant/            # Endpoint HTTP do assistente de IA (opcional)
 ├── docker/               # docker-compose.yml (testes + Prometheus + Grafana)
 ├── kubernetes/           # Manifests (CronJob de testes + stack de monitoring)
-├── terraform/            # IaC AWS (VPC, EC2, RDS opcional) + monitor Datadog
+├── terraform/            # IaC: AWS (VPC, EC2, RDS opcional), monitor Datadog, app do assistente na DO (opcional)
 ├── ansible/              # Provisionamento do EC2 (Docker + stack)
 ├── monitoring/           # Configs versionadas de Prometheus/Grafana/Datadog
 ├── .github/workflows/    # CI: testes + build/push da imagem + terraform plan/apply
@@ -63,6 +64,7 @@ qa-cloud-platform/
 - Terraform >= 1.5 e uma conta AWS (apenas se for provisionar a infra)
 - Ansible (apenas se for configurar o EC2 provisionado)
 - `kubectl` e um cluster (apenas para a opção Kubernetes)
+- Uma API key do [Groq](https://console.groq.com) e uma conta DigitalOcean (apenas para o assistente de IA opcional)
 - Conta Datadog (API Key + Application Key) se for usar o monitor via Terraform
 
 ## 1. Rodando os testes localmente
@@ -254,6 +256,46 @@ falhas.
   que tocam `terraform/**`. O `apply` só roda via `workflow_dispatch` manual
   (nunca automaticamente em um PR), usando os secrets `AWS_ACCESS_KEY_ID`,
   `AWS_SECRET_ACCESS_KEY`, `DB_PASSWORD`, `DD_API_KEY` e `DD_APP_KEY`.
+
+## 7. Assistente de QA (opcional - Groq + DigitalOcean)
+
+Um pequeno assistente que responde perguntas em linguagem natural sobre a
+saúde da suíte de testes (ex: "como estão os testes hoje?"), usando as mesmas
+métricas `qa.tests.*` do Datadog e o [Groq](https://console.groq.com) (tier
+gratuito, API compatível com OpenAI) como modelo de linguagem. A lógica fica
+em `scripts/lib/qa-assistant.js` e é exposta de duas formas:
+
+```bash
+# CLI - local ou no CI
+export DD_API_KEY=xxxx DD_APP_KEY=xxxx DD_SITE=us5.datadoghq.com GROQ_API_KEY=xxxx
+npm run ask -- "como estão os testes hoje?"
+
+# Endpoint HTTP - mesmas env vars, depois:
+npm run assistant   # POST /ask {"question": "..."} na porta 8080, GET /health
+```
+
+Pra publicar o endpoint de verdade no **DigitalOcean App Platform** (sem
+precisar gerenciar servidor, coberto pelos créditos do GitHub Student Pack):
+
+1. Uma vez só: no painel da DigitalOcean, Apps → Create App → conecte sua
+   conta/repo do GitHub, autorizando o App Platform a lê-lo (o Terraform não
+   consegue fazer esse handshake OAuth sozinho).
+2. Gere uma [API key do Groq](https://console.groq.com/keys) (grátis).
+3. ```bash
+   cd terraform
+   export DIGITALOCEAN_TOKEN=xxxxxxxx   # cloud.digitalocean.com/account/api/tokens
+   export TF_VAR_groq_api_key=xxxxxxxx
+   export TF_VAR_dd_api_key=xxxxxxxx
+   export TF_VAR_dd_app_key=xxxxxxxx
+   # edite terraform.tfvars: enable_assistant = true
+   terraform init -upgrade
+   terraform plan
+   terraform apply
+   ```
+4. `terraform output assistant_url` te dá a URL pública.
+
+Isso é totalmente opcional e desligado por padrão (`enable_assistant = false`)
+— a plataforma principal não depende dele.
 
 ## Métricas expostas
 

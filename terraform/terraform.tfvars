@@ -23,3 +23,9 @@ datadog_site = "us5.datadoghq.com"
 # RDS is optional and off by default. To enable it, set enable_rds = true
 # and pass db_password via TF_VAR_db_password (never commit a real password).
 enable_rds = false
+
+# QA assistant (DigitalOcean App Platform) is optional and off by default.
+# To enable it: set enable_assistant = true, export DIGITALOCEAN_TOKEN, and
+# pass TF_VAR_groq_api_key / TF_VAR_dd_api_key / TF_VAR_dd_app_key.
+enable_assistant      = false
+assistant_github_repo = "JaderTS/qa-platform-project"
