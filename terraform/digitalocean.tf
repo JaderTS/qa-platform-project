@@ -35,27 +35,35 @@ resource "digitalocean_app" "qa_assistant" {
         http_path = "/health"
       }
 
+      # scope must be explicit: when omitted, the env var isn't guaranteed to
+      # be injected into the running container (only at build time), which
+      # is exactly what caused "DD_API_KEY and DD_APP_KEY must be set" at
+      # runtime even though `terraform apply` succeeded.
       env {
         key   = "GROQ_API_KEY"
         value = var.groq_api_key
         type  = "SECRET"
+        scope = "RUN_AND_BUILD_TIME"
       }
 
       env {
         key   = "DD_API_KEY"
         value = var.dd_api_key
         type  = "SECRET"
+        scope = "RUN_AND_BUILD_TIME"
       }
 
       env {
         key   = "DD_APP_KEY"
         value = var.dd_app_key
         type  = "SECRET"
+        scope = "RUN_AND_BUILD_TIME"
       }
 
       env {
         key   = "DD_SITE"
         value = var.datadog_site
+        scope = "RUN_AND_BUILD_TIME"
       }
     }
   }
