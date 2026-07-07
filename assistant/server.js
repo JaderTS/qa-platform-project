@@ -20,6 +20,7 @@ app.post('/ask', async (req, res) => {
     const { answer } = await askAboutTests(question);
     res.json({ answer });
   } catch (err) {
+    console.error(`qa-assistant: /ask failed: ${err.message}`);
     res.status(502).json({ error: err.message });
   }
 });

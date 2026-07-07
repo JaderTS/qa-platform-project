@@ -14,6 +14,8 @@ const METRICS = [
   'qa.tests.success_ratio',
 ];
 
+const FETCH_TIMEOUT_MS = 8_000;
+
 async function queryDatadogMetric(metric, apiKey, appKey, site) {
   const now = Math.floor(Date.now() / 1000);
   const from = now - 24 * 60 * 60;
@@ -25,6 +27,7 @@ async function queryDatadogMetric(metric, apiKey, appKey, site) {
       'DD-API-KEY': apiKey,
       'DD-APPLICATION-KEY': appKey,
     },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!response.ok) {
     throw new Error(`Datadog query for ${metric} failed with ${response.status}`);
@@ -51,11 +54,20 @@ async function getTestHealthSummary() {
     throw new Error('DD_API_KEY and DD_APP_KEY must be set to query Datadog');
   }
 
-  const summary = {};
-  for (const metric of METRICS) {
-    summary[metric] = await queryDatadogMetric(metric, apiKey, appKey, site);
-  }
-  return summary;
+  // Run all metric queries in parallel instead of one-by-one, and let any
+  // single slow/failed metric degrade to "no data" rather than taking the
+  // whole request down (and, sequentially, 7x closer to a proxy timeout).
+  const entries = await Promise.all(
+    METRICS.map(async (metric) => {
+      try {
+        return [metric, await queryDatadogMetric(metric, apiKey, appKey, site)];
+      } catch (err) {
+        console.error(`qa-assistant: failed to query ${metric}: ${err.message}`);
+        return [metric, null];
+      }
+    })
+  );
+  return Object.fromEntries(entries);
 }
 
 function summaryToContext(summary) {
@@ -96,6 +108,7 @@ async function askAboutTests(question) {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${groqApiKey}`,
     },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS * 2),
     body: JSON.stringify({
       model,
       messages: [
