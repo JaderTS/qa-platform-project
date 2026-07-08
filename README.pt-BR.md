@@ -279,23 +279,39 @@ precisar gerenciar servidor, coberto pelos créditos do GitHub Student Pack):
 
 1. Uma vez só: no painel da DigitalOcean, Apps → Create App → conecte sua
    conta/repo do GitHub, autorizando o App Platform a lê-lo (o Terraform não
-   consegue fazer esse handshake OAuth sozinho).
-2. Gere uma [API key do Groq](https://console.groq.com/keys) (grátis).
-3. ```bash
+   consegue fazer esse handshake OAuth sozinho). Pode abandonar o assistente
+   logo depois de autorizar — **não clique em "Create app"**, ou você cria
+   um app real (cobrado) fora do controle do Terraform, que conflita com o
+   que vamos criar abaixo.
+2. Gere um token da DigitalOcean (API → Tokens → Generate New Token) com
+   **Custom Scopes → Apps: Create, Read, Update e Delete**. O Update
+   importa — um token só com Create/Read funciona na primeira vez, mas
+   falha com `403` em qualquer `terraform apply` seguinte que mude o app.
+3. Gere uma [API key do Groq](https://console.groq.com/keys) (grátis) e
+   pegue suas keys do Datadog (API Key e Application Key — são páginas
+   separadas em Organization Settings).
+4. **No mesmo terminal** (variáveis exportadas não sobrevivem entre
+   abas/janelas diferentes):
+   ```bash
    cd terraform
-   export DIGITALOCEAN_TOKEN=xxxxxxxx   # cloud.digitalocean.com/account/api/tokens
+   export DIGITALOCEAN_TOKEN=xxxxxxxx
+   export DD_API_KEY=xxxxxxxx DD_APP_KEY=xxxxxxxx   # autentica o provider do datadog
    export TF_VAR_groq_api_key=xxxxxxxx
-   export TF_VAR_dd_api_key=xxxxxxxx
-   export TF_VAR_dd_app_key=xxxxxxxx
+   export TF_VAR_dd_api_key=xxxxxxxx                # mesmo valor de DD_API_KEY, injetado no app
+   export TF_VAR_dd_app_key=xxxxxxxx                # mesmo valor de DD_APP_KEY, injetado no app
    # edite terraform.tfvars: enable_assistant = true
    terraform init -upgrade
    terraform plan
    terraform apply
    ```
-4. `terraform output assistant_url` te dá a URL pública.
+5. `terraform output assistant_url` te dá a URL pública. Se o `/ask` der
+   erro, veja os logs em tempo real com `doctl apps logs <app-id> --type run`.
 
-Isso é totalmente opcional e desligado por padrão (`enable_assistant = false`)
-— a plataforma principal não depende dele.
+Isso é opcional e desligado por padrão em `variable "enable_assistant"`
+(`terraform/variables.tf`), mas o `terraform.tfvars` deste repo já está com
+ele ligado, já que o assistente está publicado de verdade — a plataforma
+principal (testes, Prometheus/Grafana, monitor do Datadog) não depende dele
+de qualquer forma.
 
 ## Métricas expostas
 

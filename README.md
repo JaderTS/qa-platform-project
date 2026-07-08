@@ -273,23 +273,38 @@ to manage, covered by GitHub Student Pack credits):
 
 1. One-time: in the DigitalOcean control panel, Apps → Create App → connect
    your GitHub account/repo once, so App Platform is authorized to read it
-   (Terraform can't do this OAuth handshake for you).
-2. Generate a [Groq API key](https://console.groq.com/keys) (free).
-3. ```bash
+   (Terraform can't do this OAuth handshake for you). You can abandon the
+   wizard right after authorizing - don't click through to "Create app",
+   or you'll create a real (billed) app outside Terraform's control that
+   conflicts with the one below.
+2. Generate a DigitalOcean token (API → Tokens → Generate New Token) with
+   **Custom Scopes → Apps: Create, Read, Update, Delete**. Update matters -
+   a Create/Read-only token applies fine once but fails with `403` on any
+   later `terraform apply` that changes the app.
+3. Generate a [Groq API key](https://console.groq.com/keys) (free) and grab
+   your Datadog API + Application keys (Organization Settings, two separate
+   pages).
+4. In **the same terminal session** (exported vars don't survive across
+   terminal tabs/windows):
+   ```bash
    cd terraform
-   export DIGITALOCEAN_TOKEN=xxxxxxxx   # cloud.digitalocean.com/account/api/tokens
+   export DIGITALOCEAN_TOKEN=xxxxxxxx
+   export DD_API_KEY=xxxxxxxx DD_APP_KEY=xxxxxxxx   # authenticates the datadog provider
    export TF_VAR_groq_api_key=xxxxxxxx
-   export TF_VAR_dd_api_key=xxxxxxxx
-   export TF_VAR_dd_app_key=xxxxxxxx
+   export TF_VAR_dd_api_key=xxxxxxxx                # same value as DD_API_KEY, injected into the app
+   export TF_VAR_dd_app_key=xxxxxxxx                # same value as DD_APP_KEY, injected into the app
    # edit terraform.tfvars: enable_assistant = true
    terraform init -upgrade
    terraform plan
    terraform apply
    ```
-4. `terraform output assistant_url` gives you the live URL.
+5. `terraform output assistant_url` gives you the live URL. Tail runtime
+   logs with `doctl apps logs <app-id> --type run` if `/ask` errors out.
 
-This is entirely optional and off by default (`enable_assistant = false`) -
-the core platform doesn't depend on it.
+This is optional and off by default in `variable "enable_assistant"`
+(`terraform/variables.tf`), but this repo's own `terraform.tfvars` has it
+turned on since the assistant is deployed for real - the core platform
+(tests, Prometheus/Grafana, Datadog monitor) doesn't depend on it either way.
 
 ## Exposed metrics
 
