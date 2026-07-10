@@ -54,6 +54,20 @@ services:
     depends_on:
       - prometheus
 
+  # Same image as qa-tests (it already has assistant/ and scripts/lib/ baked
+  # in via the Dockerfile's `COPY . .`) - just runs the Express server
+  # instead of the test suite. Reached through Caddy at /ask (see Caddyfile),
+  # never published to the host directly.
+  assistant:
+    image: ghcr.io/jaderts/qa-platform-tests:latest
+    restart: unless-stopped
+    command: ["node", "assistant/server.js"]
+    environment:
+      - DD_API_KEY=${DD_API_KEY:-}
+      - DD_APP_KEY=${DD_APP_KEY:-}
+      - DD_SITE=${DD_SITE:-datadoghq.com}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+
   # Datadog itself is not optional - scripts/export-metrics.js always pushes
   # metrics straight to the Datadog API when DD_API_KEY is set (see .env).
   # This local Agent container is a separate, heavier add-on (host-level

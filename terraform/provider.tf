@@ -10,10 +10,6 @@ terraform {
       source  = "DataDog/datadog"
       version = "~> 3.0"
     }
-    digitalocean = {
-      source  = "digitalocean/digitalocean"
-      version = "~> 2.0"
-    }
   }
 
   # Local backend by default. For team use, switch to an S3 backend:
@@ -34,7 +30,3 @@ provider "aws" {
 provider "datadog" {
   api_url = "https://api.${var.datadog_site}/"
 }
-
-# Reads DIGITALOCEAN_TOKEN from the environment - generate one at
-# https://cloud.digitalocean.com/account/api/tokens.
-provider "digitalocean" {}

@@ -11,6 +11,14 @@ qa_platform_domain: jaderdomain.app
 # to the wrong site's API endpoint won't show up even if the push "succeeds".
 dd_site: us5.datadoghq.com
 
-# Never commit a real Datadog key. Pass it at run time instead:
-#   ansible-playbook playbook.yml -e dd_api_key=xxxxxxxx
+# Never commit real keys. Pass them at run time instead, e.g.:
+#   export DD_API_KEY=xxxx DD_APP_KEY=xxxx GROQ_API_KEY=xxxx
+#   ansible-playbook playbook.yml
 dd_api_key: "{{ lookup('env', 'DD_API_KEY') | default('', true) }}"
+
+# Required (alongside dd_api_key) for the QA assistant to query metrics back
+# out of Datadog - Organization Settings -> Application Keys.
+dd_app_key: "{{ lookup('env', 'DD_APP_KEY') | default('', true) }}"
+
+# Powers the QA assistant's language model - free tier at console.groq.com.
+groq_api_key: "{{ lookup('env', 'GROQ_API_KEY') | default('', true) }}"

@@ -47,10 +47,10 @@ viable long-term instead of getting overwhelmed on every deploy.
 qa-cloud-platform/
 ├── tests/api/            # Playwright API tests against JSONPlaceholder
 ├── scripts/              # Test-run metrics export + QA assistant core logic
-├── assistant/            # HTTP endpoint for the QA assistant (optional)
-├── docker/               # docker-compose.yml (tests + Prometheus + Grafana)
+├── assistant/            # HTTP endpoint for the QA assistant
+├── docker/               # docker-compose.yml (tests + Prometheus + Grafana + assistant)
 ├── kubernetes/           # Manifests (test CronJob + monitoring stack)
-├── terraform/            # IaC: AWS (VPC, EC2, optional RDS), Datadog monitor, optional DO assistant app
+├── terraform/            # IaC: AWS (VPC, EC2, optional RDS), Datadog monitor
 ├── ansible/              # EC2 provisioning (Docker + stack)
 ├── monitoring/           # Versioned Prometheus/Grafana/Datadog configs
 ├── .github/workflows/    # CI: tests + build/push image + terraform plan/apply
@@ -64,7 +64,7 @@ qa-cloud-platform/
 - Terraform >= 1.5 and an AWS account (only if provisioning the infra)
 - Ansible (only if configuring the provisioned EC2 instance)
 - `kubectl` and a cluster (only for the Kubernetes option)
-- A [Groq](https://console.groq.com) API key and a DigitalOcean account (only for the optional QA assistant)
+- A [Groq](https://console.groq.com) API key (only for the QA assistant)
 
 ## 1. Running the tests locally
 
@@ -85,7 +85,7 @@ API_BASE_URL=https://reqres.in/api npm test
 ```bash
 cd docker
 docker compose pull   # fetch the pre-built qa-tests image from GHCR instead of building it
-docker compose up -d prometheus grafana pushgateway
+docker compose up -d prometheus grafana pushgateway assistant
 docker compose run --rm qa-tests
 ```
 
@@ -94,6 +94,7 @@ This brings up:
 - `pushgateway`: http://localhost:9091
 - `prometheus`: http://localhost:9090 (already configured to scrape the Pushgateway)
 - `grafana`: http://localhost:3001 (login `admin` / `admin`, "QA Cloud Platform" dashboard pre-provisioned)
+- `assistant`: the QA assistant (see [step 7](#7-qa-assistant-groq-runs-on-the-same-ec2-instance)) - `curl -X POST localhost:8080/ask -d '{"question":"..."}'` if you exposed its port, otherwise it's only reachable through Caddy in production.
 
 Set `DD_API_KEY` (and `DD_SITE` if you're not on the default `datadoghq.com`
 site) before running `qa-tests` so metrics also reach Datadog:
@@ -202,7 +203,7 @@ output above. DNS propagation can take a few minutes; check with
 `dig +short jaderdomain.app` before moving on to Ansible, since Caddy needs
 the domain already resolving to request its HTTPS certificate.
 
-## 5. Configuring the EC2 instance with Ansible (HTTPS + Datadog)
+## 5. Configuring the EC2 instance with Ansible (HTTPS + Datadog + assistant)
 
 ```bash
 cd ansible
@@ -212,25 +213,28 @@ cp inventory/hosts.ini.example inventory/hosts.ini
 #   - qa_platform_repo_url: your fork's Git URL (must be reachable from the instance)
 #   - qa_platform_domain: the same domain you pointed at the Elastic IP
 
-# optional: forward metrics to your real Datadog account (Student Pack Pro plan)
-export DD_API_KEY=xxxxxxxx
+export DD_API_KEY=xxxxxxxx      # forward metrics to your real Datadog account
+export DD_APP_KEY=xxxxxxxx      # required for the assistant to query metrics back out
+export GROQ_API_KEY=xxxxxxxx    # powers the assistant's language model
 
 ansible-playbook playbook.yml
 ```
 
 The playbook installs Docker + Compose, clones the repository, renders
-`docker/.env` (domain + Datadog key/site), **pulls** the pre-built `qa-tests`
-image from GHCR (never builds it - that's what makes `t3.micro` safe here),
-brings up Prometheus/Grafana/Pushgateway behind **Caddy** (automatic Let's
-Encrypt HTTPS on your domain), runs the suite once, and schedules it (`cron`)
-to run every hour (pulling the latest image each time), logging to
-`/var/log/qa-platform-tests.log`.
+`docker/.env` (domain, Datadog and Groq keys), **pulls** the pre-built
+`qa-tests` image from GHCR (never builds it - that's what makes `t3.micro`
+safe here), brings up Prometheus/Grafana/Pushgateway/**assistant** behind
+**Caddy** (automatic Let's Encrypt HTTPS on your domain), runs the suite
+once, and schedules it (`cron`) to run every hour (pulling the latest image
+each time), logging to `/var/log/qa-platform-tests.log`.
 
 Once it finishes, open `https://<your-domain>` — that's Grafana, running for
 real on your own AWS instance, with the "QA Cloud Platform" dashboard showing
-live pass/fail metrics from the scheduled runs. The same metrics land in your
-Datadog account (Metrics Explorer, search for `qa.tests.*`), and the monitor
-from step 4 will fire there if a run ever has failures.
+live pass/fail metrics from the scheduled runs, and `POST https://<your-domain>/ask`
+answers questions about the same data (see [step 7](#7-qa-assistant-groq-runs-on-the-same-ec2-instance)).
+The metrics also land in your Datadog account (Metrics Explorer, search for
+`qa.tests.*`), and the monitor from step 4 fires there if a run ever has
+failures.
 
 ## 6. CI/CD (GitHub Actions)
 
@@ -251,13 +255,13 @@ from step 4 will fire there if a run ever has failures.
   `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `DB_PASSWORD`, `DD_API_KEY`
   and `DD_APP_KEY` secrets.
 
-## 7. QA assistant (optional - Groq + DigitalOcean)
+## 7. QA assistant (Groq, runs on the same EC2 instance)
 
 A small assistant that answers natural-language questions about the test
 suite's health (e.g. "how are the tests doing today?"), backed by the same
 `qa.tests.*` metrics in Datadog and [Groq](https://console.groq.com) (free
 tier, OpenAI-compatible API) for the language model. Shared logic lives in
-`scripts/lib/qa-assistant.js`; it's exposed two ways:
+`scripts/lib/qa-assistant.js`, exposed two ways:
 
 ```bash
 # CLI - local or in CI
@@ -268,43 +272,21 @@ npm run ask -- "how are the tests doing today?"
 npm run assistant   # POST /ask {"question": "..."} on :8080, GET /health
 ```
 
-To deploy the endpoint for real on **DigitalOcean App Platform** (no server
-to manage, covered by GitHub Student Pack credits):
+In production it's just another service in `docker/docker-compose.yml`
+(`assistant`) - it reuses the exact same `ghcr.io/.../qa-platform-tests`
+image already pulled for `qa-tests` (it already contains `assistant/` and
+`scripts/lib/`, so there's nothing extra to build or publish), just running
+`node assistant/server.js` instead of the test suite. Caddy routes
+`https://<your-domain>/ask` straight to it (see `docker/Caddyfile`) -
+Ansible starts it alongside Prometheus/Grafana in step 5, no separate
+deployment, no separate hosting bill.
 
-1. One-time: in the DigitalOcean control panel, Apps → Create App → connect
-   your GitHub account/repo once, so App Platform is authorized to read it
-   (Terraform can't do this OAuth handshake for you). You can abandon the
-   wizard right after authorizing - don't click through to "Create app",
-   or you'll create a real (billed) app outside Terraform's control that
-   conflicts with the one below.
-2. Generate a DigitalOcean token (API → Tokens → Generate New Token) with
-   **Custom Scopes → Apps: Create, Read, Update, Delete**. Update matters -
-   a Create/Read-only token applies fine once but fails with `403` on any
-   later `terraform apply` that changes the app.
-3. Generate a [Groq API key](https://console.groq.com/keys) (free) and grab
-   your Datadog API + Application keys (Organization Settings, two separate
-   pages).
-4. In **the same terminal session** (exported vars don't survive across
-   terminal tabs/windows):
-   ```bash
-   cd terraform
-   export DIGITALOCEAN_TOKEN=xxxxxxxx
-   export DD_API_KEY=xxxxxxxx DD_APP_KEY=xxxxxxxx   # authenticates the datadog provider
-   export TF_VAR_groq_api_key=xxxxxxxx
-   export TF_VAR_dd_api_key=xxxxxxxx                # same value as DD_API_KEY, injected into the app
-   export TF_VAR_dd_app_key=xxxxxxxx                # same value as DD_APP_KEY, injected into the app
-   # edit terraform.tfvars: enable_assistant = true
-   terraform init -upgrade
-   terraform plan
-   terraform apply
-   ```
-5. `terraform output assistant_url` gives you the live URL. Tail runtime
-   logs with `doctl apps logs <app-id> --type run` if `/ask` errors out.
-
-This is optional and off by default in `variable "enable_assistant"`
-(`terraform/variables.tf`), but this repo's own `terraform.tfvars` has it
-turned on since the assistant is deployed for real - the core platform
-(tests, Prometheus/Grafana, Datadog monitor) doesn't depend on it either way.
+We initially deployed this on DigitalOcean App Platform, using the GitHub
+Student Pack's DO credits - moved it here once DigitalOcean announced it's
+[ending that partnership](https://github.com/orgs/community/discussions/200663)
+(credits expire July 31, 2026). Running it on infrastructure you already
+pay for beats depending on a second free tier that can also change terms
+later.
 
 ## Exposed metrics
 

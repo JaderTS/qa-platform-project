@@ -63,7 +63,7 @@
         version: "{{ qa_platform_repo_version }}"
         force: true
 
-    - name: Render the Docker Compose .env file (domain + Datadog key)
+    - name: Render the Docker Compose .env file (domain, Datadog and Groq keys)
       ansible.builtin.template:
         src: templates/env.j2
         dest: "{{ qa_platform_dir }}/docker/.env"
@@ -84,9 +84,9 @@
     # have to spare. scripts/export-metrics.js already pushes the same
     # metrics straight to the Datadog API when DD_API_KEY is set, with no
     # agent required - see docker/docker-compose.yml.
-    - name: Start the monitoring stack (with HTTPS via Caddy) and run the test suite once
+    - name: Start the monitoring stack + QA assistant (with HTTPS via Caddy) and run the test suite once
       ansible.builtin.shell: |
-        docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d prometheus grafana pushgateway caddy
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d prometheus grafana pushgateway assistant caddy
         docker compose -f docker-compose.yml run --rm qa-tests
       args:
         chdir: "{{ qa_platform_dir }}/docker"

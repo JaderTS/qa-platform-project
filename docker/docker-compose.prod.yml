@@ -1,7 +1,8 @@
 # Production overlay: adds HTTPS via Caddy (automatic Let's Encrypt cert)
-# in front of Grafana. Grafana's own host port (3001) stays published for
-# convenience over an SSH tunnel, but only 80/443 need to be open on the
-# instance's security group - see terraform/security-group.tf.
+# in front of Grafana and the QA assistant (/ask). Grafana's own host port
+# (3001) stays published for convenience over an SSH tunnel, but only
+# 80/443 need to be open on the instance's security group - see
+# terraform/security-group.tf.
 #
 # Usage on the runner instance:
 #   DOMAIN=jaderdomain.app docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
@@ -20,6 +21,7 @@ services:
       - caddy_config:/config
     depends_on:
       - grafana
+      - assistant
 
 volumes:
   caddy_data:

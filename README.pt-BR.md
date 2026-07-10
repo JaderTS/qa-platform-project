@@ -47,10 +47,10 @@ em vez de travar a cada deploy.
 qa-cloud-platform/
 ├── tests/api/            # Testes Playwright (API) contra JSONPlaceholder
 ├── scripts/              # Export de métricas + lógica central do assistente de IA
-├── assistant/            # Endpoint HTTP do assistente de IA (opcional)
-├── docker/               # docker-compose.yml (testes + Prometheus + Grafana)
+├── assistant/            # Endpoint HTTP do assistente de IA
+├── docker/               # docker-compose.yml (testes + Prometheus + Grafana + assistente)
 ├── kubernetes/           # Manifests (CronJob de testes + stack de monitoring)
-├── terraform/            # IaC: AWS (VPC, EC2, RDS opcional), monitor Datadog, app do assistente na DO (opcional)
+├── terraform/            # IaC: AWS (VPC, EC2, RDS opcional), monitor Datadog
 ├── ansible/              # Provisionamento do EC2 (Docker + stack)
 ├── monitoring/           # Configs versionadas de Prometheus/Grafana/Datadog
 ├── .github/workflows/    # CI: testes + build/push da imagem + terraform plan/apply
@@ -64,7 +64,7 @@ qa-cloud-platform/
 - Terraform >= 1.5 e uma conta AWS (apenas se for provisionar a infra)
 - Ansible (apenas se for configurar o EC2 provisionado)
 - `kubectl` e um cluster (apenas para a opção Kubernetes)
-- Uma API key do [Groq](https://console.groq.com) e uma conta DigitalOcean (apenas para o assistente de IA opcional)
+- Uma API key do [Groq](https://console.groq.com) (apenas para o assistente de IA)
 - Conta Datadog (API Key + Application Key) se for usar o monitor via Terraform
 
 ## 1. Rodando os testes localmente
@@ -86,7 +86,7 @@ API_BASE_URL=https://reqres.in/api npm test
 ```bash
 cd docker
 docker compose pull   # baixa a imagem pronta do qa-tests do GHCR, em vez de buildar
-docker compose up -d prometheus grafana pushgateway
+docker compose up -d prometheus grafana pushgateway assistant
 docker compose run --rm qa-tests
 ```
 
@@ -95,6 +95,7 @@ Isso sobe:
 - `pushgateway`: http://localhost:9091
 - `prometheus`: http://localhost:9090 (já configurado para raspar o Pushgateway)
 - `grafana`: http://localhost:3001 (login `admin` / `admin`, dashboard "QA Cloud Platform" pré-provisionado)
+- `assistant`: o assistente de QA (veja o [passo 7](#7-assistente-de-qa-groq-roda-na-mesma-instância-ec2)) — `curl -X POST localhost:8080/ask -d '{"question":"..."}'` se você expôs a porta, senão só é acessível via Caddy em produção.
 
 Defina `DD_API_KEY` (e `DD_SITE` se sua conta não estiver no site padrão
 `datadoghq.com`) antes de rodar o `qa-tests` pra métrica também chegar no
@@ -206,7 +207,7 @@ confira com `dig +short jaderdomain.app` antes de seguir para o Ansible, pois
 o Caddy precisa que o domínio já resolva para conseguir emitir o certificado
 HTTPS.
 
-## 5. Configurando o EC2 com Ansible (HTTPS + Datadog)
+## 5. Configurando o EC2 com Ansible (HTTPS + Datadog + assistente)
 
 ```bash
 cd ansible
@@ -215,26 +216,28 @@ cp inventory/hosts.ini.example inventory/hosts.ini
 # edite group_vars/all.yml:
 #   - qa_platform_repo_url: a URL do seu fork (precisa ser acessível pela instância)
 #   - qa_platform_domain: o mesmo domínio que você apontou pro Elastic IP
-#   - dd_site: o site da sua conta Datadog (ex: us5.datadoghq.com)
 
-# manda as métricas pra sua conta real do Datadog (plano Pro do Student Pack)
-export DD_API_KEY=xxxxxxxx
+export DD_API_KEY=xxxxxxxx      # manda métricas pra sua conta real do Datadog
+export DD_APP_KEY=xxxxxxxx      # necessário pro assistente conseguir consultar as métricas
+export GROQ_API_KEY=xxxxxxxx    # alimenta o modelo de linguagem do assistente
 
 ansible-playbook playbook.yml
 ```
 
 O playbook instala Docker + Compose, clona o repositório, renderiza o
-`docker/.env` (domínio + chave/site do Datadog), **puxa** a imagem pronta do
-`qa-tests` do GHCR (nunca builda — é isso que deixa o `t3.micro` seguro
-aqui), sobe o Prometheus/Grafana/Pushgateway atrás do **Caddy** (HTTPS
-automático via Let's Encrypt no seu domínio), roda a suíte uma vez e agenda
-(`cron`) para rodar a cada hora (puxando a imagem mais recente a cada vez),
-com log em `/var/log/qa-platform-tests.log`.
+`docker/.env` (domínio, chaves do Datadog e do Groq), **puxa** a imagem
+pronta do `qa-tests` do GHCR (nunca builda — é isso que deixa o `t3.micro`
+seguro aqui), sobe o Prometheus/Grafana/Pushgateway/**assistant** atrás do
+**Caddy** (HTTPS automático via Let's Encrypt no seu domínio), roda a suíte
+uma vez e agenda (`cron`) para rodar a cada hora (puxando a imagem mais
+recente a cada vez), com log em `/var/log/qa-platform-tests.log`.
 
 Quando terminar, acesse `https://<seu-dominio>` — isso é o Grafana, rodando
 de verdade na sua própria instância AWS, com o dashboard "QA Cloud Platform"
-mostrando as métricas de pass/fail das execuções agendadas em tempo real. As
-mesmas métricas caem na sua conta Datadog (Metrics Explorer, busque por
+mostrando as métricas de pass/fail das execuções agendadas em tempo real, e
+`POST https://<seu-dominio>/ask` responde perguntas sobre os mesmos dados
+(veja o [passo 7](#7-assistente-de-qa-groq-roda-na-mesma-instância-ec2)). As
+métricas também caem na sua conta Datadog (Metrics Explorer, busque por
 `qa.tests.*`), e o monitor do passo 4 dispara lá se alguma execução tiver
 falhas.
 
@@ -257,13 +260,13 @@ falhas.
   (nunca automaticamente em um PR), usando os secrets `AWS_ACCESS_KEY_ID`,
   `AWS_SECRET_ACCESS_KEY`, `DB_PASSWORD`, `DD_API_KEY` e `DD_APP_KEY`.
 
-## 7. Assistente de QA (opcional - Groq + DigitalOcean)
+## 7. Assistente de QA (Groq, roda na mesma instância EC2)
 
 Um pequeno assistente que responde perguntas em linguagem natural sobre a
 saúde da suíte de testes (ex: "como estão os testes hoje?"), usando as mesmas
 métricas `qa.tests.*` do Datadog e o [Groq](https://console.groq.com) (tier
 gratuito, API compatível com OpenAI) como modelo de linguagem. A lógica fica
-em `scripts/lib/qa-assistant.js` e é exposta de duas formas:
+em `scripts/lib/qa-assistant.js`, exposta de duas formas:
 
 ```bash
 # CLI - local ou no CI
@@ -274,44 +277,22 @@ npm run ask -- "como estão os testes hoje?"
 npm run assistant   # POST /ask {"question": "..."} na porta 8080, GET /health
 ```
 
-Pra publicar o endpoint de verdade no **DigitalOcean App Platform** (sem
-precisar gerenciar servidor, coberto pelos créditos do GitHub Student Pack):
+Em produção é só mais um serviço no `docker/docker-compose.yml`
+(`assistant`) — reaproveita exatamente a mesma imagem
+`ghcr.io/.../qa-platform-tests` já puxada pro `qa-tests` (ela já contém
+`assistant/` e `scripts/lib/`, então não tem nada extra pra buildar ou
+publicar), só rodando `node assistant/server.js` em vez da suíte de testes.
+O Caddy roteia `https://<seu-dominio>/ask` direto pra ele (veja
+`docker/Caddyfile`) — o Ansible já sobe ele junto com Prometheus/Grafana no
+passo 5, sem deploy separado, sem fatura de hospedagem separada.
 
-1. Uma vez só: no painel da DigitalOcean, Apps → Create App → conecte sua
-   conta/repo do GitHub, autorizando o App Platform a lê-lo (o Terraform não
-   consegue fazer esse handshake OAuth sozinho). Pode abandonar o assistente
-   logo depois de autorizar — **não clique em "Create app"**, ou você cria
-   um app real (cobrado) fora do controle do Terraform, que conflita com o
-   que vamos criar abaixo.
-2. Gere um token da DigitalOcean (API → Tokens → Generate New Token) com
-   **Custom Scopes → Apps: Create, Read, Update e Delete**. O Update
-   importa — um token só com Create/Read funciona na primeira vez, mas
-   falha com `403` em qualquer `terraform apply` seguinte que mude o app.
-3. Gere uma [API key do Groq](https://console.groq.com/keys) (grátis) e
-   pegue suas keys do Datadog (API Key e Application Key — são páginas
-   separadas em Organization Settings).
-4. **No mesmo terminal** (variáveis exportadas não sobrevivem entre
-   abas/janelas diferentes):
-   ```bash
-   cd terraform
-   export DIGITALOCEAN_TOKEN=xxxxxxxx
-   export DD_API_KEY=xxxxxxxx DD_APP_KEY=xxxxxxxx   # autentica o provider do datadog
-   export TF_VAR_groq_api_key=xxxxxxxx
-   export TF_VAR_dd_api_key=xxxxxxxx                # mesmo valor de DD_API_KEY, injetado no app
-   export TF_VAR_dd_app_key=xxxxxxxx                # mesmo valor de DD_APP_KEY, injetado no app
-   # edite terraform.tfvars: enable_assistant = true
-   terraform init -upgrade
-   terraform plan
-   terraform apply
-   ```
-5. `terraform output assistant_url` te dá a URL pública. Se o `/ask` der
-   erro, veja os logs em tempo real com `doctl apps logs <app-id> --type run`.
-
-Isso é opcional e desligado por padrão em `variable "enable_assistant"`
-(`terraform/variables.tf`), mas o `terraform.tfvars` deste repo já está com
-ele ligado, já que o assistente está publicado de verdade — a plataforma
-principal (testes, Prometheus/Grafana, monitor do Datadog) não depende dele
-de qualquer forma.
+Inicialmente publicamos isso na DigitalOcean App Platform, usando o crédito
+de DO do GitHub Student Pack — movemos pra aqui depois que a DigitalOcean
+anunciou que está
+[encerrando essa parceria](https://github.com/orgs/community/discussions/200663)
+(os créditos expiram em 31/07/2026). Rodar numa infraestrutura que você já
+paga é melhor do que depender de um segundo free tier que também pode
+mudar de política depois.
 
 ## Métricas expostas
 

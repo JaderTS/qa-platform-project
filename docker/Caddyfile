@@ -1,3 +1,8 @@
 {$DOMAIN} {
-	reverse_proxy grafana:3000
+	handle /ask {
+		reverse_proxy assistant:8080
+	}
+	handle {
+		reverse_proxy grafana:3000
+	}
 }
