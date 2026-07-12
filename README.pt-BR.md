@@ -216,6 +216,7 @@ cp inventory/hosts.ini.example inventory/hosts.ini
 # edite group_vars/all.yml:
 #   - qa_platform_repo_url: a URL do seu fork (precisa ser acessível pela instância)
 #   - qa_platform_domain: o mesmo domínio que você apontou pro Elastic IP
+#   - dd_site: o site da sua conta Datadog (confira a URL quando estiver logado)
 
 export DD_API_KEY=xxxxxxxx      # manda métricas pra sua conta real do Datadog
 export DD_APP_KEY=xxxxxxxx      # necessário pro assistente conseguir consultar as métricas
@@ -240,6 +241,36 @@ mostrando as métricas de pass/fail das execuções agendadas em tempo real, e
 métricas também caem na sua conta Datadog (Metrics Explorer, busque por
 `qa.tests.*`), e o monitor do passo 4 dispara lá se alguma execução tiver
 falhas.
+
+### Troubleshooting: a primeira execução trava / SSH para de responder
+
+O `t3.micro` tem 1GB de RAM e créditos de CPU limitados (burstable).
+Instalar o Docker, clonar o repo, puxar cinco imagens e subir cinco
+containers tudo de uma vez — só na **primeira** execução — pode
+ocasionalmente esgotar os dois recursos, a ponto até do SSH parar de
+responder (o handshake TCP funciona, mas o banner nunca chega). Se isso
+acontecer:
+
+```bash
+# em terraform/, temporariamente:
+sed -i '' 's/t3.micro/t3.small/' terraform.tfvars   # ou edite manualmente
+terraform apply
+# espera ~30s o resize terminar, depois roda de novo:
+cd ../ansible && ansible-playbook playbook.yml
+```
+
+Depois que os containers subirem e as imagens estiverem em cache, volta
+pro tamanho menor — em regime estável (a stack parada + o cron horário)
+cabe tranquilo no `t3.micro`:
+
+```bash
+# terraform.tfvars: instance_type = "t3.micro"
+terraform apply
+```
+
+As políticas `restart: unless-stopped` do Docker (já configuradas em todo
+serviço de longa duração) religam tudo sozinhas depois do reboot do
+resize — não precisa rodar o Ansible de novo.
 
 ## 6. CI/CD (GitHub Actions)
 

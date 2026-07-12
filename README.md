@@ -212,6 +212,7 @@ cp inventory/hosts.ini.example inventory/hosts.ini
 # edit group_vars/all.yml:
 #   - qa_platform_repo_url: your fork's Git URL (must be reachable from the instance)
 #   - qa_platform_domain: the same domain you pointed at the Elastic IP
+#   - dd_site: the site your Datadog org lives on (check the URL when logged in)
 
 export DD_API_KEY=xxxxxxxx      # forward metrics to your real Datadog account
 export DD_APP_KEY=xxxxxxxx      # required for the assistant to query metrics back out
@@ -235,6 +236,35 @@ answers questions about the same data (see [step 7](#7-qa-assistant-groq-runs-on
 The metrics also land in your Datadog account (Metrics Explorer, search for
 `qa.tests.*`), and the monitor from step 4 fires there if a run ever has
 failures.
+
+### Troubleshooting: the very first run hangs / SSH stops responding
+
+`t3.micro` has 1GB of RAM and burstable CPU credits. Installing Docker,
+cloning the repo, pulling five images and starting five containers all in
+one go - the *first* time only - can occasionally exhaust both, to the
+point where even SSH stops answering (the TCP handshake still succeeds,
+but the banner never comes). If that happens:
+
+```bash
+# in terraform/, temporarily:
+sed -i '' 's/t3.micro/t3.small/' terraform.tfvars   # or edit by hand
+terraform apply
+# wait ~30s for the resize, then re-run:
+cd ../ansible && ansible-playbook playbook.yml
+```
+
+Once the containers are up and the images are cached, scale back down -
+steady-state (the stack idling + the hourly cron run) fits comfortably in
+`t3.micro`:
+
+```bash
+# terraform.tfvars: instance_type = "t3.micro"
+terraform apply
+```
+
+Docker's `restart: unless-stopped` policies (already set on every
+long-running service) bring everything back up automatically after the
+resize reboot - no need to re-run Ansible again.
 
 ## 6. CI/CD (GitHub Actions)
 
