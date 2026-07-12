@@ -7,9 +7,9 @@ public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
 private_subnet_cidrs = ["10.0.11.0/24", "10.0.12.0/24"]
 availability_zones   = ["us-east-1a", "us-east-1b"]
 
-instance_type    = "t3.micro"                # image is only ever pulled (GHCR), never built here, so free tier is safe now
-key_name         = "qa-platform-student-key" # set to an existing EC2 key pair name before applying
-allowed_ssh_cidr = "0.0.0.0/0"               # restrict this to your own IP/32 in real use
+instance_type    = "t3.micro"       # image is only ever pulled (GHCR), never built here, so free tier is safe now
+key_name         = "qa-project-key" # back on the original AWS account - the student account is pending AWS account verification
+allowed_ssh_cidr = "0.0.0.0/0"      # restrict this to your own IP/32 in real use
 
 # Point an A record for this domain at the `qa_runner_public_ip` output
 # before applying the Ansible playbook, so Caddy can issue a certificate.
