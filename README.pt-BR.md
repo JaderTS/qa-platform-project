@@ -231,7 +231,12 @@ pronta do `qa-tests` do GHCR (nunca builda — é isso que deixa o `t3.micro`
 seguro aqui), sobe o Prometheus/Grafana/Pushgateway/**assistant** atrás do
 **Caddy** (HTTPS automático via Let's Encrypt no seu domínio), roda a suíte
 uma vez e agenda (`cron`) para rodar a cada hora (puxando a imagem mais
-recente a cada vez), com log em `/var/log/qa-platform-tests.log`.
+recente a cada vez), com log em `/var/log/qa-platform-tests.log`. A entrada
+do cron é protegida com `flock` (uma execução lenta não sobrepõe o próximo
+disparo horário) e `timeout 300` (uma execução travada é morta de vez) — uma
+execução que já foi morta por OOM no `t3.micro` deixou a máquina praticamente
+sem resposta por quase um dia inteiro, porque nada impedia a execução da
+hora seguinte de se acumular em cima da anterior.
 
 Quando terminar, acesse `https://<seu-dominio>` — isso é o Grafana, rodando
 de verdade na sua própria instância AWS, com o dashboard "QA Cloud Platform"
@@ -242,26 +247,40 @@ métricas também caem na sua conta Datadog (Metrics Explorer, busque por
 `qa.tests.*`), e o monitor do passo 4 dispara lá se alguma execução tiver
 falhas.
 
-### Troubleshooting: a primeira execução trava / SSH para de responder
+### Troubleshooting: a máquina trava / SSH para de responder
 
-O `t3.micro` tem 1GB de RAM e créditos de CPU limitados (burstable).
-Instalar o Docker, clonar o repo, puxar cinco imagens e subir cinco
-containers tudo de uma vez — só na **primeira** execução — pode
-ocasionalmente esgotar os dois recursos, a ponto até do SSH parar de
-responder (o handshake TCP funciona, mas o banner nunca chega). Se isso
-acontecer:
+O `t3.micro` tem 1GB de RAM e créditos de CPU limitados (burstable), e cinco
+containers permanentes mais um sexto periódico (`qa-tests`, a cada hora) é
+genuinamente no limite. Duas situações distintas a se conhecer:
+
+- **A primeira execução**: instalar o Docker, clonar o repo, puxar cinco
+  imagens e subir cinco containers tudo de uma vez pode ocasionalmente
+  esgotar RAM e créditos de CPU, a ponto até do SSH parar de responder (o
+  handshake TCP funciona, mas o banner nunca chega).
+- **Uma execução do cron mais tarde**: o `qa-tests` soma brevemente um
+  sexto container aos cinco que já estão rodando; num dia ruim isso é
+  suficiente pro OOM killer do kernel matá-lo. Isso já aconteceu de
+  verdade — e como o cron não tinha proteção contra sobreposição/travamento
+  na época, a máquina ficou degradada por quase um dia inteiro (cada novo
+  disparo horário se acumulando em cima do que já estava travado) até um
+  reboot manual limpar tudo. O cron agora está protegido com `flock` +
+  `timeout 300` (veja o passo 5) justamente pra uma execução ruim não
+  cascatear desse jeito de novo — o pior caso agora é perder um ponto de
+  dado, não uma parada de várias horas.
+
+Se a máquina ficar mesmo sem resposta, redimensione temporariamente pra
+recuperar:
 
 ```bash
 # em terraform/, temporariamente:
 sed -i '' 's/t3.micro/t3.small/' terraform.tfvars   # ou edite manualmente
 terraform apply
-# espera ~30s o resize terminar, depois roda de novo:
-cd ../ansible && ansible-playbook playbook.yml
+# espera ~30s o resize terminar, depois (só necessário no caso da
+# *primeira* execução) roda de novo: cd ../ansible && ansible-playbook playbook.yml
 ```
 
-Depois que os containers subirem e as imagens estiverem em cache, volta
-pro tamanho menor — em regime estável (a stack parada + o cron horário)
-cabe tranquilo no `t3.micro`:
+Depois que estabilizar, volta pro tamanho menor — em regime estável (a
+stack parada + o cron horário) cabe tranquilo no `t3.micro`:
 
 ```bash
 # terraform.tfvars: instance_type = "t3.micro"
@@ -270,7 +289,7 @@ terraform apply
 
 As políticas `restart: unless-stopped` do Docker (já configuradas em todo
 serviço de longa duração) religam tudo sozinhas depois do reboot do
-resize — não precisa rodar o Ansible de novo.
+resize — não precisa rodar o Ansible só por causa do resize.
 
 ## 6. CI/CD (GitHub Actions)
 

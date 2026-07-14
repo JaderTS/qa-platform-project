@@ -227,7 +227,11 @@ The playbook installs Docker + Compose, clones the repository, renders
 safe here), brings up Prometheus/Grafana/Pushgateway/**assistant** behind
 **Caddy** (automatic Let's Encrypt HTTPS on your domain), runs the suite
 once, and schedules it (`cron`) to run every hour (pulling the latest image
-each time), logging to `/var/log/qa-platform-tests.log`.
+each time), logging to `/var/log/qa-platform-tests.log`. The cron entry is
+wrapped in `flock` (so a slow run can't overlap the next hourly trigger) and
+`timeout 300` (so a wedged run gets killed outright) - a run that once got
+OOM-killed on `t3.micro` left the box unresponsive for the better part of a
+day because nothing stopped the next hour's run from piling on top of it.
 
 Once it finishes, open `https://<your-domain>` — that's Grafana, running for
 real on your own AWS instance, with the "QA Cloud Platform" dashboard showing
@@ -237,25 +241,38 @@ The metrics also land in your Datadog account (Metrics Explorer, search for
 `qa.tests.*`), and the monitor from step 4 fires there if a run ever has
 failures.
 
-### Troubleshooting: the very first run hangs / SSH stops responding
+### Troubleshooting: the box hangs / SSH stops responding
 
-`t3.micro` has 1GB of RAM and burstable CPU credits. Installing Docker,
-cloning the repo, pulling five images and starting five containers all in
-one go - the *first* time only - can occasionally exhaust both, to the
-point where even SSH stops answering (the TCP handshake still succeeds,
-but the banner never comes). If that happens:
+`t3.micro` has 1GB of RAM and burstable CPU credits, and five containers
+plus a periodic sixth (`qa-tests`, hourly) is genuinely tight. Two distinct
+situations to know about:
+
+- **The very first run**: installing Docker, cloning the repo, pulling five
+  images and starting five containers all in one go can occasionally
+  exhaust both RAM and CPU credits, to the point where even SSH stops
+  answering (the TCP handshake still succeeds, but the banner never comes).
+- **A later hourly cron run**: `qa-tests` briefly adds a sixth container on
+  top of the five already running; on a bad day that's enough for the
+  kernel OOM killer to kill it. This actually happened once - and because
+  the cron job had no overlap/timeout protection at the time, the box
+  stayed degraded for the better part of a day (each new hourly trigger
+  piling on top of whatever was already stuck) until a manual reboot
+  cleared it. The cron is now wrapped in `flock` + `timeout 300` (see step
+  5) specifically so a single bad run can't cascade like that again - worst
+  case is now one missed data point, not a multi-hour outage.
+
+If the box does become unresponsive, temporarily upsize it to recover:
 
 ```bash
 # in terraform/, temporarily:
 sed -i '' 's/t3.micro/t3.small/' terraform.tfvars   # or edit by hand
 terraform apply
-# wait ~30s for the resize, then re-run:
-cd ../ansible && ansible-playbook playbook.yml
+# wait ~30s for the resize, then (only needed after the *first*-run case)
+# re-run: cd ../ansible && ansible-playbook playbook.yml
 ```
 
-Once the containers are up and the images are cached, scale back down -
-steady-state (the stack idling + the hourly cron run) fits comfortably in
-`t3.micro`:
+Once things are stable again, scale back down - steady-state (the stack
+idling + the hourly cron run) fits comfortably in `t3.micro`:
 
 ```bash
 # terraform.tfvars: instance_type = "t3.micro"
@@ -264,7 +281,7 @@ terraform apply
 
 Docker's `restart: unless-stopped` policies (already set on every
 long-running service) bring everything back up automatically after the
-resize reboot - no need to re-run Ansible again.
+resize reboot - no need to re-run Ansible for a resize alone.
 
 ## 6. CI/CD (GitHub Actions)
 
