@@ -279,6 +279,15 @@ resize reboot - no need to re-run Ansible again.
     (`https://github.com/users/<you>/packages/container/qa-platform-tests/settings`)
     and set visibility to **Public** so the EC2 runner and Kubernetes can
     `docker pull` it without credentials.
+  - **`publish-report`** job: publishes the Playwright HTML report to
+    **GitHub Pages** after every run on `main` (push, the 6h schedule, or a
+    manual dispatch) - never from a PR. Live at
+    `https://<owner>.github.io/<repo>/`, no login required, so the scheduled
+    runs' results are actually visible to anyone, not just people with repo
+    access. It publishes even when tests fail - that's the point, it's proof
+    the schedule is real. One-time setup: Settings → Pages → Build and
+    deployment → Source: **GitHub Actions** (already done for this repo via
+    `gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow`).
 - `.github/workflows/terraform.yml`: validates and runs `plan` for Terraform
   on PRs that touch `terraform/**`. `apply` only runs via manual
   `workflow_dispatch` (never automatically on a PR), using the

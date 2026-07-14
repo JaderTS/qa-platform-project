@@ -286,6 +286,16 @@ resize — não precisa rodar o Ansible de novo.
     pacote no GitHub (`https://github.com/users/<voce>/packages/container/qa-platform-tests/settings`)
     e mude a visibilidade pra **Public**, pra o runner EC2 e o Kubernetes
     conseguirem dar `docker pull` sem credencial.
+  - job **`publish-report`**: publica o relatório HTML do Playwright no
+    **GitHub Pages** depois de toda execução no `main` (push, o agendamento
+    de 6h, ou dispatch manual) — nunca a partir de um PR. Fica em
+    `https://<owner>.github.io/<repo>/`, sem precisar de login, então o
+    resultado das execuções agendadas fica visível pra qualquer pessoa, não
+    só quem tem acesso ao repositório. Publica mesmo quando os testes falham
+    — é exatamente esse o ponto, é a prova de que o agendamento é real.
+    Configuração única: Settings → Pages → Build and deployment → Source:
+    **GitHub Actions** (já feito nesse repo via
+    `gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow`).
 - `.github/workflows/terraform.yml`: valida e faz `plan` do Terraform em PRs
   que tocam `terraform/**`. O `apply` só roda via `workflow_dispatch` manual
   (nunca automaticamente em um PR), usando os secrets `AWS_ACCESS_KEY_ID`,
