@@ -22,3 +22,83 @@ resource "datadog_monitor" "qa_test_failures" {
 
   tags = ["project:${var.project_name}", "env:${var.environment}"]
 }
+
+# Mirrors monitoring/grafana/dashboards/qa-tests.json so the same numbers
+# are browsable in Datadog too. Terraform can't flip this dashboard's
+# "Public Sharing" toggle (the Datadog API/provider doesn't expose that) -
+# that's a one-time manual step: open the dashboard -> Share icon -> Enable
+# public sharing.
+resource "datadog_dashboard" "qa_tests" {
+  title       = "${var.project_name} - JSONPlaceholder test suite"
+  description = "Mirrors the Grafana dashboard - same qa.tests.* metrics."
+  layout_type = "ordered"
+
+  widget {
+    query_value_definition {
+      title = "Success ratio"
+      request {
+        q          = "avg:qa.tests.success_ratio{*}"
+        aggregator = "last"
+      }
+      precision   = 2
+      custom_unit = "%"
+      autoscale   = true
+    }
+  }
+
+  widget {
+    query_value_definition {
+      title = "Tests passed"
+      request {
+        q          = "avg:qa.tests.passed{*}"
+        aggregator = "last"
+      }
+      autoscale = true
+    }
+  }
+
+  widget {
+    query_value_definition {
+      title = "Tests failed"
+      request {
+        q          = "avg:qa.tests.failed{*}"
+        aggregator = "last"
+      }
+      autoscale = true
+    }
+  }
+
+  widget {
+    query_value_definition {
+      title = "Run duration (s)"
+      request {
+        q          = "avg:qa.tests.duration_seconds{*}"
+        aggregator = "last"
+      }
+      autoscale = true
+    }
+  }
+
+  widget {
+    timeseries_definition {
+      title = "Pass/fail trend"
+      request {
+        q            = "avg:qa.tests.passed{*}"
+        display_type = "line"
+      }
+      request {
+        q            = "avg:qa.tests.failed{*}"
+        display_type = "line"
+      }
+      request {
+        q            = "avg:qa.tests.flaky{*}"
+        display_type = "line"
+      }
+    }
+  }
+}
+
+output "datadog_dashboard_url" {
+  description = "Datadog dashboard URL (private until you enable Public Sharing manually)"
+  value       = "https://${var.datadog_site}${datadog_dashboard.qa_tests.url}"
+}
