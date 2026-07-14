@@ -240,14 +240,23 @@ execução que já foi morta por OOM no `t3.micro` deixou a máquina praticament
 sem resposta por quase um dia inteiro, porque nada impedia a execução da
 hora seguinte de se acumular em cima da anterior.
 
-Quando terminar, acesse `https://<seu-dominio>` — isso é o Grafana, rodando
-de verdade na sua própria instância AWS, com o dashboard "QA Cloud Platform"
-mostrando as métricas de pass/fail das execuções agendadas em tempo real, e
-`POST https://<seu-dominio>/ask` responde perguntas sobre os mesmos dados
-(veja o [passo 7](#7-assistente-de-qa-groq-roda-na-mesma-instância-ec2)). As
-métricas também caem na sua conta Datadog (Metrics Explorer, busque por
-`qa.tests.*`), e o monitor do passo 4 dispara lá se alguma execução tiver
-falhas.
+Quando terminar, acesse **https://jaderdomain.app/d/qa-platform-tests/qa-cloud-platform-jsonplaceholder-test-suite?refresh=30s** —
+isso é o Grafana, rodando de verdade na sua própria instância AWS, com o
+dashboard "QA Cloud Platform" mostrando as métricas de pass/fail das
+execuções agendadas em tempo real (atualiza sozinho a cada 30s), e `POST
+https://jaderdomain.app/ask` responde perguntas sobre os mesmos dados (veja
+o [passo 7](#7-assistente-de-qa-groq-roda-na-mesma-instância-ec2)).
+
+As métricas também caem na sua conta Datadog. O `terraform apply` do passo 4
+já provisionou um dashboard equivalente lá (`terraform output
+datadog_dashboard_url`), espelhando os mesmos painéis, e o monitor desse
+mesmo passo dispara se alguma execução tiver falhas. O provider do Datadog
+no Terraform não consegue alterar a visibilidade de um dashboard, então
+torná-lo público (opcional) é um passo manual único: abre o dashboard →
+ícone **Share** (canto superior direito) → **Enable Public Sharing** → copia
+o link gerado. Sem esse passo, o dashboard fica privado pra sua organização
+no Datadog — igual aconteceria com o Grafana se você não tivesse deixado o
+`GF_AUTH_ANONYMOUS_ENABLED=true` (já ligado por padrão aqui).
 
 ### Troubleshooting: a máquina trava / SSH para de responder
 

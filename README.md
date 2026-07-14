@@ -235,13 +235,21 @@ wrapped in `flock` (so a slow run can't overlap the next hourly trigger) and
 OOM-killed on `t3.micro` left the box unresponsive for the better part of a
 day because nothing stopped the next hour's run from piling on top of it.
 
-Once it finishes, open `https://<your-domain>` — that's Grafana, running for
-real on your own AWS instance, with the "QA Cloud Platform" dashboard showing
-live pass/fail metrics from the scheduled runs, and `POST https://<your-domain>/ask`
+Once it finishes, open **https://jaderdomain.app/d/qa-platform-tests/qa-cloud-platform-jsonplaceholder-test-suite?refresh=30s** —
+that's Grafana, running for real on your own AWS instance, with the "QA
+Cloud Platform" dashboard showing live pass/fail metrics from the scheduled
+runs (auto-refreshing every 30s), and `POST https://jaderdomain.app/ask`
 answers questions about the same data (see [step 7](#7-qa-assistant-groq-runs-on-the-same-ec2-instance)).
-The metrics also land in your Datadog account (Metrics Explorer, search for
-`qa.tests.*`), and the monitor from step 4 fires there if a run ever has
-failures.
+
+The metrics also land in your Datadog account. `terraform apply` in step 4
+already provisioned a matching dashboard there (`terraform output
+datadog_dashboard_url`) mirroring the same panels, and the monitor from that
+step fires if a run ever has failures. Datadog's Terraform provider can't
+flip a dashboard's visibility, so making it public (optional) is a one-time
+manual step: open the dashboard → **Share** icon (top right) → **Enable
+Public Sharing** → copy the generated link. Without that step the dashboard
+stays private to your Datadog org, same as Grafana would if you hadn't set
+`GF_AUTH_ANONYMOUS_ENABLED=true` (already on by default here).
 
 ### Troubleshooting: the box hangs / SSH stops responding
 
