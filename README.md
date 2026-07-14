@@ -2,6 +2,8 @@
 
 *[Leia em português](README.pt-BR.md)*
 
+**Live test report:** https://jaderts.github.io/qa-platform-project/ (updated automatically after every run on `main` - see [step 6](#6-cicd-github-actions))
+
 A QA platform that runs an automated API test suite against public APIs
 (by default, [JSONPlaceholder](https://jsonplaceholder.typicode.com/)), with a
 full infrastructure stack to run that suite on a schedule in the cloud and
@@ -299,11 +301,12 @@ resize reboot - no need to re-run Ansible for a resize alone.
   - **`publish-report`** job: publishes the Playwright HTML report to
     **GitHub Pages** after every run on `main` (push, the 6h schedule, or a
     manual dispatch) - never from a PR. Live at
-    `https://<owner>.github.io/<repo>/`, no login required, so the scheduled
-    runs' results are actually visible to anyone, not just people with repo
-    access. It publishes even when tests fail - that's the point, it's proof
-    the schedule is real. One-time setup: Settings → Pages → Build and
-    deployment → Source: **GitHub Actions** (already done for this repo via
+    **https://jaderts.github.io/qa-platform-project/**, no login required, so
+    the scheduled runs' results are actually visible to anyone, not just
+    people with repo access. It publishes even when tests fail - that's the
+    point, it's proof the schedule is real. One-time setup: Settings → Pages
+    → Build and deployment → Source: **GitHub Actions** (already done for
+    this repo via
     `gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow`).
 - `.github/workflows/terraform.yml`: validates and runs `plan` for Terraform
   on PRs that touch `terraform/**`. `apply` only runs via manual

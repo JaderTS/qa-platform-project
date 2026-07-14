@@ -2,6 +2,8 @@
 
 *[Read this in English](README.md)*
 
+**Relatório de testes ao vivo:** https://jaderts.github.io/qa-platform-project/ (atualizado automaticamente depois de toda execução no `main` — veja o [passo 6](#6-cicd-github-actions))
+
 Plataforma de QA que executa uma suíte de testes automatizados de API contra
 APIs públicas (por padrão, [JSONPlaceholder](https://jsonplaceholder.typicode.com/)),
 com toda a esteira de infraestrutura para rodar essa suíte de forma agendada
@@ -308,11 +310,12 @@ resize — não precisa rodar o Ansible só por causa do resize.
   - job **`publish-report`**: publica o relatório HTML do Playwright no
     **GitHub Pages** depois de toda execução no `main` (push, o agendamento
     de 6h, ou dispatch manual) — nunca a partir de um PR. Fica em
-    `https://<owner>.github.io/<repo>/`, sem precisar de login, então o
-    resultado das execuções agendadas fica visível pra qualquer pessoa, não
-    só quem tem acesso ao repositório. Publica mesmo quando os testes falham
-    — é exatamente esse o ponto, é a prova de que o agendamento é real.
-    Configuração única: Settings → Pages → Build and deployment → Source:
+    **https://jaderts.github.io/qa-platform-project/**, sem precisar de
+    login, então o resultado das execuções agendadas fica visível pra
+    qualquer pessoa, não só quem tem acesso ao repositório. Publica mesmo
+    quando os testes falham — é exatamente esse o ponto, é a prova de que o
+    agendamento é real. Configuração única: Settings → Pages → Build and
+    deployment → Source:
     **GitHub Actions** (já feito nesse repo via
     `gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow`).
 - `.github/workflows/terraform.yml`: valida e faz `plan` do Terraform em PRs
