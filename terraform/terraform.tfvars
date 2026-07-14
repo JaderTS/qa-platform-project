@@ -7,7 +7,7 @@ public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
 private_subnet_cidrs = ["10.0.11.0/24", "10.0.12.0/24"]
 availability_zones   = ["us-east-1a", "us-east-1b"]
 
-instance_type    = "t3.micro"       # free-tier; the hourly cron now has flock+timeout so a hung/OOM run can't cascade
+instance_type    = "t3.small"       # t3.micro was hanging even in steady-state with 5 persistent containers; see README troubleshooting
 key_name         = "qa-project-key" # back on the original AWS account - the student account is pending AWS account verification
 allowed_ssh_cidr = "0.0.0.0/0"      # restrict this to your own IP/32 in real use
 
