@@ -91,11 +91,18 @@
       args:
         chdir: "{{ qa_platform_dir }}/docker"
 
+    # flock prevents a slow/hung run from overlapping with the next hourly
+    # trigger (each stacked run adds more memory pressure on a t3.micro,
+    # which is exactly how a single OOM-killed run once cascaded into the
+    # whole box being unresponsive for over a day). timeout guarantees a
+    # wedged run gets killed outright instead of piling up forever.
     - name: Schedule the QA suite to run hourly (pull first, then run)
       ansible.builtin.cron:
         name: "qa-platform test suite"
         minute: "0"
         job: >-
-          cd {{ qa_platform_dir }}/docker &&
+          flock -n /tmp/qa-platform-tests.lock -c
+          "cd {{ qa_platform_dir }}/docker &&
           docker compose -f docker-compose.yml pull qa-tests &&
-          docker compose -f docker-compose.yml run --rm qa-tests >> /var/log/qa-platform-tests.log 2>&1
+          timeout 300 docker compose -f docker-compose.yml run --rm qa-tests"
+          >> /var/log/qa-platform-tests.log 2>&1
